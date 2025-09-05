@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дурак - Многопользовательская игра</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Login Screen -->
+        <div id="loginScreen" class="screen active">
+            <div class="login-container">
+                <h1>Дурак</h1>
+                <p>Многопользовательская карточная игра</p>
+                <div class="login-form">
+                    <input type="text" id="playerName" placeholder="Введите ваше имя" maxlength="20">
+                    <button id="joinGameBtn">Присоединиться к игре</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Waiting Screen -->
+        <div id="waitingScreen" class="screen">
+            <div class="waiting-container">
+                <h2>Ожидание игрока...</h2>
+                <div class="spinner"></div>
+                <p>Поиск противника для игры</p>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="gameScreen" class="screen">
+            <!-- Game Header -->
+            <div class="game-header">
+                <div class="player-info opponent-info">
+                    <div class="player-name" id="opponentName">Противник</div>
+                    <div class="hand-count" id="opponentHandCount">6 карт</div>
+                </div>
+                
+                <div class="game-info">
+                    <div class="trump-info">
+                        <span>Козырь:</span>
+                        <div class="trump-card" id="trumpCard"></div>
+                    </div>
+                    <div class="deck-info">
+                        <div class="deck-count" id="deckCount">30</div>
+                        <div class="deck-icon">🂠</div>
+                    </div>
+                </div>
+
+                <div class="player-info current-player-info">
+                    <div class="player-name" id="currentPlayerName">Вы</div>
+                    <div class="hand-count" id="currentPlayerHandCount">6 карт</div>
+                </div>
+            </div>
+
+            <!-- Game Table -->
+            <div class="game-table">
+                <div class="table-area" id="tableArea">
+                    <!-- Attack and defense cards will be placed here -->
+                </div>
+                
+                <div class="game-actions">
+                    <button id="endTurnBtn" class="action-btn" disabled>Завершить ход</button>
+                    <button id="takeCardsBtn" class="action-btn" disabled>Взять карты</button>
+                </div>
+            </div>
+
+            <!-- Player Hand -->
+            <div class="player-hand">
+                <div class="hand-title">Ваши карты</div>
+                <div class="hand-cards" id="playerHand">
+                    <!-- Player cards will be dynamically added here -->
+                </div>
+            </div>
+
+            <!-- Game Status -->
+            <div class="game-status">
+                <div id="gameStatusText">Ожидание начала игры...</div>
+                <div id="turnIndicator"></div>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="screen">
+            <div class="game-over-container">
+                <h2 id="gameResult">Игра окончена</h2>
+                <p id="gameResultText"></p>
+                <button id="playAgainBtn">Играть снова</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Card Templates -->
+    <template id="cardTemplate">
+        <div class="card" data-suit="" data-rank="">
+            <div class="card-content">
+                <div class="card-rank"></div>
+                <div class="card-suit"></div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tableCardPairTemplate">
+        <div class="card-pair">
+            <div class="attack-card-slot">
+                <div class="card attack-card" data-suit="" data-rank="">
+                    <div class="card-content">
+                        <div class="card-rank"></div>
+                        <div class="card-suit"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="defense-card-slot">
+                <!-- Defense card will be placed here if defended -->
+            </div>
+        </div>
+    </template>
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
