@@ -13,6 +13,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Game state
 const games = new Map();
 const waitingPlayers = [];
+const playerStats = new Map(); // Store player statistics
 
 // Durak game class
 class DurakGame {
@@ -335,10 +336,50 @@ io.on('connection', (socket) => {
         });
 
         if (game.gameEnded) {
+            // Update player statistics
+            const winner = game.players.find(p => p.id === game.winner);
+            const loser = game.players.find(p => p.id !== game.winner);
+            
+            if (winner && loser) {
+                updatePlayerStats(winner.name, true);  // Winner
+                updatePlayerStats(loser.name, false);  // Loser
+            }
+
             io.to(game.gameId).emit('gameEnded', {
                 winner: game.winner,
-                winnerName: game.players.find(p => p.id === game.winner)?.name
+                winnerName: winner?.name,
+                winnerStats: winner ? getPlayerStats(winner.name) : null,
+                loserStats: loser ? getPlayerStats(loser.name) : null
             });
+        }
+    });
+
+    // Get player statistics
+    socket.on('getPlayerStats', (playerName) => {
+        const stats = getPlayerStats(playerName);
+        socket.emit('playerStats', stats);
+    });
+
+    // Handle chat messages
+    socket.on('chatMessage', (message) => {
+        const game = findGameByPlayerId(socket.id);
+        if (game) {
+            const player = game.players.find(p => p.id === socket.id);
+            if (player) {
+                // Send message to opponent only
+                socket.to(game.gameId).emit('chatMessage', {
+                    playerName: player.name,
+                    message: message,
+                    isOwnMessage: false
+                });
+                
+                // Send back to sender with isOwnMessage flag
+                socket.emit('chatMessage', {
+                    playerName: player.name,
+                    message: message,
+                    isOwnMessage: true
+                });
+            }
         }
     });
 
@@ -363,6 +404,10 @@ io.on('connection', (socket) => {
                 const remainingPlayer = game.players.find(p => p.id !== socket.id);
                 if (remainingPlayer) {
                     game.winner = remainingPlayer.id;
+                    
+                    // Update statistics - remaining player wins, disconnected player loses
+                    updatePlayerStats(remainingPlayer.name, true);
+                    updatePlayerStats(player.name, false);
                 }
                 
                 // Notify remaining player
@@ -375,7 +420,9 @@ io.on('connection', (socket) => {
                 socket.to(game.gameId).emit('gameEnded', {
                     winner: game.winner,
                     winnerName: remainingPlayer?.name,
-                    reason: 'opponent_disconnected'
+                    reason: 'opponent_disconnected',
+                    winnerStats: remainingPlayer ? getPlayerStats(remainingPlayer.name) : null,
+                    loserStats: getPlayerStats(player.name)
                 });
                 
                 // Remove the game after a delay
@@ -395,6 +442,31 @@ function findGameByPlayerId(playerId) {
         }
     }
     return null;
+}
+
+// Player statistics functions
+function getPlayerStats(playerName) {
+    if (!playerStats.has(playerName)) {
+        playerStats.set(playerName, {
+            gamesPlayed: 0,
+            wins: 0,
+            losses: 0,
+            winRate: 0
+        });
+    }
+    return playerStats.get(playerName);
+}
+
+function updatePlayerStats(playerName, won) {
+    const stats = getPlayerStats(playerName);
+    stats.gamesPlayed++;
+    if (won) {
+        stats.wins++;
+    } else {
+        stats.losses++;
+    }
+    stats.winRate = stats.gamesPlayed > 0 ? (stats.wins / stats.gamesPlayed * 100).toFixed(1) : 0;
+    playerStats.set(playerName, stats);
 }
 
 const PORT = process.env.PORT || 3000;
