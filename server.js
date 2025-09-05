@@ -14,6 +14,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 const games = new Map();
 const waitingPlayers = [];
 const playerStats = new Map(); // Store player statistics
+const achievements = new Map(); // Store player achievements
+const globalLeaderboard = []; // Global leaderboard cache
 
 // Durak game class
 class DurakGame {
@@ -341,16 +343,24 @@ io.on('connection', (socket) => {
             const loser = game.players.find(p => p.id !== game.winner);
             
             if (winner && loser) {
-                updatePlayerStats(winner.name, true);  // Winner
-                updatePlayerStats(loser.name, false);  // Loser
-            }
+                // Check for special achievements
+                const winnerGameResult = {
+                    perfectGame: loser.hand.length >= 10, // Perfect game if loser has many cards
+                    comebackWin: winner.hand.length >= 10  // Comeback if winner had many cards
+                };
+                
+                const winnerAchievements = updatePlayerStats(winner.name, true, winnerGameResult);
+                const loserAchievements = updatePlayerStats(loser.name, false);
 
-            io.to(game.gameId).emit('gameEnded', {
-                winner: game.winner,
-                winnerName: winner?.name,
-                winnerStats: winner ? getPlayerStats(winner.name) : null,
-                loserStats: loser ? getPlayerStats(loser.name) : null
-            });
+                io.to(game.gameId).emit('gameEnded', {
+                    winner: game.winner,
+                    winnerName: winner?.name,
+                    winnerStats: getPlayerStats(winner.name),
+                    loserStats: getPlayerStats(loser.name),
+                    winnerAchievements: winnerAchievements,
+                    loserAchievements: loserAchievements
+                });
+            }
         }
     });
 
@@ -358,6 +368,17 @@ io.on('connection', (socket) => {
     socket.on('getPlayerStats', (playerName) => {
         const stats = getPlayerStats(playerName);
         socket.emit('playerStats', stats);
+    });
+
+    // Get leaderboard
+    socket.on('getLeaderboard', () => {
+        socket.emit('leaderboard', globalLeaderboard);
+    });
+
+    // Get player achievements
+    socket.on('getAchievements', (playerName) => {
+        const playerAchievements = getPlayerAchievements(playerName);
+        socket.emit('achievements', playerAchievements);
     });
 
     // Handle chat messages
@@ -406,8 +427,8 @@ io.on('connection', (socket) => {
                     game.winner = remainingPlayer.id;
                     
                     // Update statistics - remaining player wins, disconnected player loses
-                    updatePlayerStats(remainingPlayer.name, true);
-                    updatePlayerStats(player.name, false);
+                    const winnerAchievements = updatePlayerStats(remainingPlayer.name, true);
+                    const loserAchievements = updatePlayerStats(player.name, false);
                 }
                 
                 // Notify remaining player
@@ -444,6 +465,96 @@ function findGameByPlayerId(playerId) {
     return null;
 }
 
+// Achievement definitions
+const ACHIEVEMENTS = {
+    FIRST_WIN: { id: 'first_win', name: 'Первая победа', description: 'Выиграйте свою первую игру', icon: '🏆' },
+    WINNING_STREAK_3: { id: 'streak_3', name: 'Тройная серия', description: 'Выиграйте 3 игры подряд', icon: '🔥' },
+    WINNING_STREAK_5: { id: 'streak_5', name: 'Пятерная серия', description: 'Выиграйте 5 игр подряд', icon: '⚡' },
+    VETERAN: { id: 'veteran', name: 'Ветеран', description: 'Сыграйте 50 игр', icon: '🎖️' },
+    MASTER: { id: 'master', name: 'Мастер', description: 'Достигните 80% побед при минимум 20 играх', icon: '👑' },
+    PERFECTIONIST: { id: 'perfectionist', name: 'Перфекционист', description: 'Выиграйте игру, не взяв ни одной карты', icon: '💎' },
+    COMEBACK_KING: { id: 'comeback', name: 'Король камбэка', description: 'Выиграйте, имея на руках 10+ карт', icon: '🔄' }
+};
+
+// Leaderboard and achievement functions
+function updateLeaderboard() {
+    const players = Array.from(playerStats.entries())
+        .filter(([name, stats]) => stats.gamesPlayed >= 5) // Minimum 5 games to appear on leaderboard
+        .map(([name, stats]) => ({
+            name,
+            gamesPlayed: stats.gamesPlayed,
+            wins: stats.wins,
+            winRate: parseFloat(stats.winRate),
+            currentStreak: stats.currentStreak || 0,
+            bestStreak: stats.bestStreak || 0,
+            achievements: achievements.get(name) || []
+        }))
+        .sort((a, b) => {
+            // Primary sort by win rate, secondary by games played
+            if (Math.abs(a.winRate - b.winRate) < 0.1) {
+                return b.gamesPlayed - a.gamesPlayed;
+            }
+            return b.winRate - a.winRate;
+        })
+        .slice(0, 10); // Top 10 players
+    
+    globalLeaderboard.length = 0;
+    globalLeaderboard.push(...players);
+}
+
+function checkAchievements(playerName, gameResult) {
+    const stats = getPlayerStats(playerName);
+    const playerAchievements = achievements.get(playerName) || [];
+    const newAchievements = [];
+
+    // First win achievement
+    if (gameResult.won && stats.wins === 1 && !playerAchievements.some(a => a.id === 'first_win')) {
+        newAchievements.push(ACHIEVEMENTS.FIRST_WIN);
+    }
+
+    // Winning streak achievements
+    const currentStreak = stats.currentStreak || 0;
+    if (currentStreak >= 3 && !playerAchievements.some(a => a.id === 'streak_3')) {
+        newAchievements.push(ACHIEVEMENTS.WINNING_STREAK_3);
+    }
+    if (currentStreak >= 5 && !playerAchievements.some(a => a.id === 'streak_5')) {
+        newAchievements.push(ACHIEVEMENTS.WINNING_STREAK_5);
+    }
+
+    // Veteran achievement
+    if (stats.gamesPlayed >= 50 && !playerAchievements.some(a => a.id === 'veteran')) {
+        newAchievements.push(ACHIEVEMENTS.VETERAN);
+    }
+
+    // Master achievement
+    if (stats.gamesPlayed >= 20 && stats.winRate >= 80 && !playerAchievements.some(a => a.id === 'master')) {
+        newAchievements.push(ACHIEVEMENTS.MASTER);
+    }
+
+    // Perfect game achievement
+    if (gameResult.won && gameResult.perfectGame && !playerAchievements.some(a => a.id === 'perfectionist')) {
+        newAchievements.push(ACHIEVEMENTS.PERFECTIONIST);
+    }
+
+    // Comeback achievement
+    if (gameResult.won && gameResult.comebackWin && !playerAchievements.some(a => a.id === 'comeback')) {
+        newAchievements.push(ACHIEVEMENTS.COMEBACK_KING);
+    }
+
+    // Update achievements if there are new ones
+    if (newAchievements.length > 0) {
+        const updatedAchievements = [...playerAchievements, ...newAchievements];
+        achievements.set(playerName, updatedAchievements);
+        return newAchievements;
+    }
+
+    return [];
+}
+
+function getPlayerAchievements(playerName) {
+    return achievements.get(playerName) || [];
+}
+
 // Player statistics functions
 function getPlayerStats(playerName) {
     if (!playerStats.has(playerName)) {
@@ -451,22 +562,46 @@ function getPlayerStats(playerName) {
             gamesPlayed: 0,
             wins: 0,
             losses: 0,
-            winRate: 0
+            winRate: 0,
+            currentStreak: 0,
+            bestStreak: 0,
+            lastGameWon: false
         });
     }
     return playerStats.get(playerName);
 }
 
-function updatePlayerStats(playerName, won) {
+function updatePlayerStats(playerName, won, gameResult = {}) {
     const stats = getPlayerStats(playerName);
     stats.gamesPlayed++;
+    
     if (won) {
         stats.wins++;
+        stats.currentStreak = (stats.currentStreak || 0) + 1;
+        stats.bestStreak = Math.max(stats.bestStreak || 0, stats.currentStreak);
+        stats.lastGameWon = true;
     } else {
         stats.losses++;
+        stats.currentStreak = 0;
+        stats.lastGameWon = false;
     }
+    
     stats.winRate = stats.gamesPlayed > 0 ? (stats.wins / stats.gamesPlayed * 100).toFixed(1) : 0;
     playerStats.set(playerName, stats);
+    
+    // Check for achievements
+    const achievementData = {
+        won,
+        perfectGame: gameResult.perfectGame || false,
+        comebackWin: gameResult.comebackWin || false
+    };
+    
+    const newAchievements = checkAchievements(playerName, achievementData);
+    
+    // Update leaderboard
+    updateLeaderboard();
+    
+    return newAchievements;
 }
 
 const PORT = process.env.PORT || 3000;

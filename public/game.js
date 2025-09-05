@@ -18,10 +18,14 @@ class DurakClient {
         this.waitingScreen = document.getElementById('waitingScreen');
         this.gameScreen = document.getElementById('gameScreen');
         this.gameOverScreen = document.getElementById('gameOverScreen');
+        this.leaderboardScreen = document.getElementById('leaderboardScreen');
+        this.achievementsScreen = document.getElementById('achievementsScreen');
 
         // Login elements
         this.playerNameInput = document.getElementById('playerName');
         this.joinGameBtn = document.getElementById('joinGameBtn');
+        this.showLeaderboardBtn = document.getElementById('showLeaderboardBtn');
+        this.showAchievementsBtn = document.getElementById('showAchievementsBtn');
         
         // Statistics elements
         this.playerStatsContainer = document.getElementById('playerStatsContainer');
@@ -67,6 +71,22 @@ class DurakClient {
         // Templates
         this.cardTemplate = document.getElementById('cardTemplate');
         this.tableCardPairTemplate = document.getElementById('tableCardPairTemplate');
+
+        // Leaderboard elements
+        this.leaderboardList = document.getElementById('leaderboardList');
+        this.leaderboardEmpty = document.getElementById('leaderboardEmpty');
+        this.backFromLeaderboardBtn = document.getElementById('backFromLeaderboardBtn');
+
+        // Achievements elements
+        this.achievementsList = document.getElementById('achievementsList');
+        this.achievementsEmpty = document.getElementById('achievementsEmpty');
+        this.backFromAchievementsBtn = document.getElementById('backFromAchievementsBtn');
+
+        // Achievement notification
+        this.achievementNotification = document.getElementById('achievementNotification');
+        this.achievementIcon = document.getElementById('achievementIcon');
+        this.achievementTitle = document.getElementById('achievementTitle');
+        this.achievementDescription = document.getElementById('achievementDescription');
     }
 
     setupEventListeners() {
@@ -75,6 +95,12 @@ class DurakClient {
         this.playerNameInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.joinGame();
         });
+
+        // Menu navigation
+        this.showLeaderboardBtn.addEventListener('click', () => this.showLeaderboard());
+        this.showAchievementsBtn.addEventListener('click', () => this.showAchievements());
+        this.backFromLeaderboardBtn.addEventListener('click', () => this.showScreen('loginScreen'));
+        this.backFromAchievementsBtn.addEventListener('click', () => this.showScreen('loginScreen'));
 
         // Game actions
         this.endTurnBtn.addEventListener('click', () => this.endTurn());
@@ -142,6 +168,14 @@ class DurakClient {
 
         this.socket.on('playerStats', (stats) => {
             this.updatePlayerStats(stats);
+        });
+
+        this.socket.on('leaderboard', (leaderboard) => {
+            this.displayLeaderboard(leaderboard);
+        });
+
+        this.socket.on('achievements', (achievements) => {
+            this.displayAchievements(achievements);
         });
 
         this.socket.on('chatMessage', (data) => {
@@ -487,8 +521,16 @@ class DurakClient {
         // Update final statistics display
         if (result.winner === this.socket.id && result.winnerStats) {
             this.updateFinalStats(result.winnerStats);
+            // Show winner achievements
+            if (result.winnerAchievements && result.winnerAchievements.length > 0) {
+                this.showAchievementNotifications(result.winnerAchievements);
+            }
         } else if (result.winner !== this.socket.id && result.loserStats) {
             this.updateFinalStats(result.loserStats);
+            // Show loser achievements (if any)
+            if (result.loserAchievements && result.loserAchievements.length > 0) {
+                this.showAchievementNotifications(result.loserAchievements);
+            }
         }
 
         setTimeout(() => {
@@ -748,6 +790,27 @@ class DurakClient {
                 oscillator.start(this.audioContext.currentTime);
                 oscillator.stop(this.audioContext.currentTime + 0.1);
                 break;
+                
+            case 'achievement':
+                // Achievement notification sound - ascending chime
+                const achievementNotes = [440, 554, 659, 880]; // A, C#, E, A
+                achievementNotes.forEach((freq, index) => {
+                    setTimeout(() => {
+                        const achievementOsc = this.audioContext.createOscillator();
+                        const achievementGain = this.audioContext.createGain();
+                        
+                        achievementOsc.connect(achievementGain);
+                        achievementGain.connect(this.audioContext.destination);
+                        
+                        achievementOsc.frequency.setValueAtTime(freq, this.audioContext.currentTime);
+                        achievementGain.gain.setValueAtTime(0.08, this.audioContext.currentTime);
+                        achievementGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.4);
+                        
+                        achievementOsc.start(this.audioContext.currentTime);
+                        achievementOsc.stop(this.audioContext.currentTime + 0.4);
+                    }, index * 100);
+                });
+                return;
         }
     }
 
@@ -769,6 +832,124 @@ class DurakClient {
                 oscillator.stop(this.audioContext.currentTime + 0.3);
             }, index * 100);
         });
+    }
+    // Leaderboard and achievements methods
+    showLeaderboard() {
+        this.socket.emit('getLeaderboard');
+        this.showScreen('leaderboardScreen');
+    }
+
+    showAchievements() {
+        if (this.playerName) {
+            this.socket.emit('getAchievements', this.playerName);
+        }
+        this.showScreen('achievementsScreen');
+    }
+
+    displayLeaderboard(leaderboard) {
+        if (!leaderboard || leaderboard.length === 0) {
+            this.leaderboardList.style.display = 'none';
+            this.leaderboardEmpty.style.display = 'block';
+            return;
+        }
+
+        this.leaderboardList.style.display = 'block';
+        this.leaderboardEmpty.style.display = 'none';
+        this.leaderboardList.innerHTML = '';
+
+        leaderboard.forEach((player, index) => {
+            const entry = document.createElement('div');
+            entry.className = `leaderboard-entry ${index < 3 ? `top-${index + 1}` : ''}`;
+            
+            entry.innerHTML = `
+                <div class="leaderboard-rank rank-${index + 1}">${index + 1}</div>
+                <div class="leaderboard-player">
+                    <div class="leaderboard-name">${player.name}</div>
+                    <div class="leaderboard-stats">
+                        <div class="leaderboard-stat">
+                            <span class="leaderboard-stat-value">${player.winRate}%</span>
+                            <span>Процент побед</span>
+                        </div>
+                        <div class="leaderboard-stat">
+                            <span class="leaderboard-stat-value">${player.wins}</span>
+                            <span>Побед</span>
+                        </div>
+                        <div class="leaderboard-stat">
+                            <span class="leaderboard-stat-value">${player.gamesPlayed}</span>
+                            <span>Игр</span>
+                        </div>
+                        <div class="leaderboard-stat">
+                            <span class="leaderboard-stat-value">${player.currentStreak}</span>
+                            <span>Серия</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="leaderboard-achievements">
+                    ${player.achievements.slice(0, 5).map(achievement => 
+                        `<span class="leaderboard-achievement" title="${achievement.name}: ${achievement.description}">${achievement.icon}</span>`
+                    ).join('')}
+                </div>
+            `;
+            
+            this.leaderboardList.appendChild(entry);
+        });
+    }
+
+    displayAchievements(playerAchievements) {
+        // Define all possible achievements
+        const allAchievements = [
+            { id: 'first_win', name: 'Первая победа', description: 'Выиграйте свою первую игру', icon: '🏆' },
+            { id: 'streak_3', name: 'Тройная серия', description: 'Выиграйте 3 игры подряд', icon: '🔥' },
+            { id: 'streak_5', name: 'Пятерная серия', description: 'Выиграйте 5 игр подряд', icon: '⚡' },
+            { id: 'veteran', name: 'Ветеран', description: 'Сыграйте 50 игр', icon: '🎖️' },
+            { id: 'master', name: 'Мастер', description: 'Достигните 80% побед при минимум 20 играх', icon: '👑' },
+            { id: 'perfectionist', name: 'Перфекционист', description: 'Выиграйте игру, не взяв ни одной карты', icon: '💎' },
+            { id: 'comeback', name: 'Король камбэка', description: 'Выиграйте, имея на руках 10+ карт', icon: '🔄' }
+        ];
+
+        this.achievementsList.innerHTML = '';
+        
+        if (!playerAchievements || playerAchievements.length === 0) {
+            this.achievementsEmpty.style.display = 'block';
+        } else {
+            this.achievementsEmpty.style.display = 'none';
+        }
+
+        allAchievements.forEach(achievement => {
+            const isUnlocked = playerAchievements.some(pa => pa.id === achievement.id);
+            
+            const card = document.createElement('div');
+            card.className = `achievement-card ${isUnlocked ? 'unlocked' : 'locked'}`;
+            
+            card.innerHTML = `
+                <div class="achievement-card-icon">${achievement.icon}</div>
+                <div class="achievement-card-title">${achievement.name}</div>
+                <div class="achievement-card-description">${achievement.description}</div>
+            `;
+            
+            this.achievementsList.appendChild(card);
+        });
+    }
+
+    showAchievementNotifications(achievements) {
+        achievements.forEach((achievement, index) => {
+            setTimeout(() => {
+                this.showAchievementNotification(achievement);
+            }, index * 3000); // Show each achievement 3 seconds apart
+        });
+    }
+
+    showAchievementNotification(achievement) {
+        this.achievementIcon.textContent = achievement.icon;
+        this.achievementTitle.textContent = achievement.name;
+        this.achievementDescription.textContent = achievement.description;
+        
+        this.achievementNotification.classList.add('show');
+        this.playSound('achievement');
+        
+        setTimeout(() => {
+            this.achievementNotification.classList.remove('show');
+        }, 4000);
     }
 }
 
