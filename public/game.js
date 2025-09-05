@@ -8,6 +8,8 @@ class DurakClient {
         this.initializeElements();
         this.setupEventListeners();
         this.setupSocketListeners();
+        this.initializeSoundSystem();
+        this.initializeThemeSystem();
     }
 
     initializeElements() {
@@ -20,6 +22,13 @@ class DurakClient {
         // Login elements
         this.playerNameInput = document.getElementById('playerName');
         this.joinGameBtn = document.getElementById('joinGameBtn');
+        
+        // Statistics elements
+        this.playerStatsContainer = document.getElementById('playerStatsContainer');
+        this.gamesPlayedEl = document.getElementById('gamesPlayed');
+        this.winsEl = document.getElementById('wins');
+        this.lossesEl = document.getElementById('losses');
+        this.winRateEl = document.getElementById('winRate');
 
         // Game elements
         this.opponentName = document.getElementById('opponentName');
@@ -39,6 +48,21 @@ class DurakClient {
         this.gameResult = document.getElementById('gameResult');
         this.gameResultText = document.getElementById('gameResultText');
         this.playAgainBtn = document.getElementById('playAgainBtn');
+        
+        // Final statistics elements
+        this.finalGamesPlayedEl = document.getElementById('finalGamesPlayed');
+        this.finalWinsEl = document.getElementById('finalWins');
+        this.finalWinRateEl = document.getElementById('finalWinRate');
+
+        // Chat elements
+        this.chatContainer = document.querySelector('.chat-container');
+        this.chatMessages = document.getElementById('chatMessages');
+        this.chatInput = document.getElementById('chatInput');
+        this.sendChatBtn = document.getElementById('sendChatBtn');
+        this.toggleChatBtn = document.getElementById('toggleChat');
+        this.toggleSoundBtn = document.getElementById('toggleSound');
+        this.toggleThemeBtn = document.getElementById('toggleTheme');
+        this.chatContent = document.getElementById('chatContent');
 
         // Templates
         this.cardTemplate = document.getElementById('cardTemplate');
@@ -58,6 +82,15 @@ class DurakClient {
 
         // Play again
         this.playAgainBtn.addEventListener('click', () => this.playAgain());
+
+        // Chat functionality
+        this.sendChatBtn.addEventListener('click', () => this.sendChatMessage());
+        this.chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.sendChatMessage();
+        });
+        this.toggleChatBtn.addEventListener('click', () => this.toggleChat());
+        this.toggleSoundBtn.addEventListener('click', () => this.toggleSound());
+        this.toggleThemeBtn.addEventListener('click', () => this.toggleTheme());
     }
 
     setupSocketListeners() {
@@ -106,6 +139,14 @@ class DurakClient {
             console.log('Disconnected from server');
             this.gameStatusText.textContent = 'Соединение потеряно...';
         });
+
+        this.socket.on('playerStats', (stats) => {
+            this.updatePlayerStats(stats);
+        });
+
+        this.socket.on('chatMessage', (data) => {
+            this.displayChatMessage(data.playerName, data.message, data.isOwnMessage);
+        });
     }
 
     joinGame() {
@@ -117,6 +158,7 @@ class DurakClient {
 
         this.playerName = name;
         this.socket.emit('joinGame', name);
+        this.socket.emit('getPlayerStats', name);
     }
 
     showScreen(screenId) {
@@ -203,6 +245,7 @@ class DurakClient {
 
     updatePlayerHand() {
         this.playerHand.innerHTML = '';
+        const cardElements = [];
         
         this.gameState.playerHand.forEach(card => {
             const cardElement = this.createCard(card);
@@ -226,7 +269,13 @@ class DurakClient {
             }
             
             this.playerHand.appendChild(cardElement);
+            cardElements.push(cardElement);
         });
+        
+        // Apply staggered animations to new cards
+        if (cardElements.length > 0) {
+            this.staggerCardAnimations(cardElements, 50);
+        }
     }
 
     createCard(cardData) {
@@ -261,6 +310,7 @@ class DurakClient {
         // Select new card
         cardElement.classList.add('selected');
         this.selectedCard = cardData;
+        this.playSound('cardSelect');
 
         // If player can attack, try to attack immediately
         if (this.canAttack() && this.canPlayCard(cardData)) {
@@ -273,9 +323,16 @@ class DurakClient {
     }
 
     attackWithCard(card) {
+        // Add played animation to the card before sending
+        const selectedCardEl = document.querySelector('.card.selected');
+        if (selectedCardEl) {
+            this.animateCardPlay(selectedCardEl);
+        }
+        
         this.socket.emit('attack', { card: card });
         this.selectedCard = null;
         document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
+        this.playSound('cardPlace');
     }
 
     updateDefenseSlots() {
@@ -405,6 +462,7 @@ class DurakClient {
                 this.gameResult.textContent = 'Победа!';
                 this.gameResult.style.color = '#27ae60';
                 this.gameResultText.textContent = 'Противник покинул игру. Вы выиграли!';
+                this.playSound('victory');
             } else {
                 this.gameResult.textContent = 'Игра прервана';
                 this.gameResult.style.color = '#f39c12';
@@ -414,14 +472,23 @@ class DurakClient {
             this.gameResult.textContent = 'Победа!';
             this.gameResult.style.color = '#27ae60';
             this.gameResultText.textContent = 'Поздравляем! Вы выиграли игру!';
+            this.playSound('victory');
         } else if (result.winner) {
             this.gameResult.textContent = 'Поражение';
             this.gameResult.style.color = '#e74c3c';
             this.gameResultText.textContent = `${result.winnerName} выиграл игру.`;
+            this.playSound('defeat');
         } else {
             this.gameResult.textContent = 'Ничья';
             this.gameResult.style.color = '#f39c12';
             this.gameResultText.textContent = 'Игра закончилась ничьей.';
+        }
+
+        // Update final statistics display
+        if (result.winner === this.socket.id && result.winnerStats) {
+            this.updateFinalStats(result.winnerStats);
+        } else if (result.winner !== this.socket.id && result.loserStats) {
+            this.updateFinalStats(result.loserStats);
         }
 
         setTimeout(() => {
@@ -476,6 +543,232 @@ class DurakClient {
         setTimeout(() => {
             notification.remove();
         }, 3000);
+    }
+
+    updatePlayerStats(stats) {
+        if (!stats) return;
+        
+        this.gamesPlayedEl.textContent = stats.gamesPlayed;
+        this.winsEl.textContent = stats.wins;
+        this.lossesEl.textContent = stats.losses;
+        this.winRateEl.textContent = stats.winRate + '%';
+        
+        // Show stats container if player has played games
+        if (stats.gamesPlayed > 0) {
+            this.playerStatsContainer.style.display = 'block';
+        }
+    }
+
+    updateFinalStats(stats) {
+        if (!stats) return;
+        
+        this.finalGamesPlayedEl.textContent = stats.gamesPlayed;
+        this.finalWinsEl.textContent = stats.wins;
+        this.finalWinRateEl.textContent = stats.winRate + '%';
+    }
+
+    sendChatMessage() {
+        const message = this.chatInput.value.trim();
+        if (message.length === 0) return;
+        
+        this.socket.emit('chatMessage', message);
+        this.chatInput.value = '';
+    }
+
+    displayChatMessage(playerName, message, isOwnMessage = false) {
+        const messageEl = document.createElement('div');
+        messageEl.className = `chat-message ${isOwnMessage ? 'own-message' : 'other-message'}`;
+        
+        const timeEl = document.createElement('span');
+        timeEl.className = 'chat-time';
+        timeEl.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        
+        const nameEl = document.createElement('span');
+        nameEl.className = 'chat-name';
+        nameEl.textContent = playerName + ':';
+        
+        const textEl = document.createElement('span');
+        textEl.className = 'chat-text';
+        textEl.textContent = message;
+        
+        messageEl.appendChild(timeEl);
+        messageEl.appendChild(nameEl);
+        messageEl.appendChild(textEl);
+        
+        this.chatMessages.appendChild(messageEl);
+        this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+        
+        // Play sound for incoming messages (not own messages)
+        if (!isOwnMessage) {
+            this.playSound('chat');
+        }
+    }
+
+    toggleChat() {
+        const isVisible = this.chatContent.style.display !== 'none';
+        if (isVisible) {
+            this.chatContent.style.display = 'none';
+            this.toggleChatBtn.textContent = '+';
+        } else {
+            this.chatContent.style.display = 'block';
+            this.toggleChatBtn.textContent = '−';
+        }
+    }
+
+    toggleSound() {
+        this.soundEnabled = !this.soundEnabled;
+        this.toggleSoundBtn.textContent = this.soundEnabled ? '🔊' : '🔇';
+        this.toggleSoundBtn.title = this.soundEnabled ? 'Отключить звуки' : 'Включить звуки';
+    }
+
+    initializeThemeSystem() {
+        // Check for saved theme preference or default to light
+        this.isDarkTheme = localStorage.getItem('durak-theme') === 'dark';
+        this.applyTheme();
+    }
+
+    toggleTheme() {
+        this.isDarkTheme = !this.isDarkTheme;
+        localStorage.setItem('durak-theme', this.isDarkTheme ? 'dark' : 'light');
+        this.applyTheme();
+    }
+
+    applyTheme() {
+        if (this.isDarkTheme) {
+            document.body.classList.add('dark-theme');
+            this.toggleThemeBtn.textContent = '☀️';
+            this.toggleThemeBtn.title = 'Переключить на светлую тему';
+        } else {
+            document.body.classList.remove('dark-theme');
+            this.toggleThemeBtn.textContent = '🌙';
+            this.toggleThemeBtn.title = 'Переключить на тёмную тему';
+        }
+    }
+
+    // Animation helper functions
+    animateCardPlay(cardElement) {
+        cardElement.classList.add('played');
+        setTimeout(() => {
+            cardElement.classList.remove('played');
+        }, 500);
+    }
+
+    animateCardFlip(cardElement) {
+        cardElement.style.animation = 'cardFlip 0.6s ease-in-out';
+        setTimeout(() => {
+            cardElement.style.animation = '';
+        }, 600);
+    }
+
+    animateInvalidMove(element) {
+        element.style.animation = 'shake 0.5s ease-in-out';
+        setTimeout(() => {
+            element.style.animation = '';
+        }, 500);
+    }
+
+    staggerCardAnimations(cards, delay = 100) {
+        cards.forEach((card, index) => {
+            setTimeout(() => {
+                card.style.animation = 'cardAppear 0.5s ease-out';
+            }, index * delay);
+        });
+    }
+
+    initializeSoundSystem() {
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            this.soundEnabled = true;
+        } catch (e) {
+            console.warn('Web Audio API not supported, sounds disabled');
+            this.soundEnabled = false;
+        }
+    }
+
+    playSound(type) {
+        if (!this.soundEnabled || !this.audioContext) return;
+        
+        // Resume audio context if it's suspended (browser autoplay policy)
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+        
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        
+        // Configure sound based on type
+        switch (type) {
+            case 'cardPlace':
+                oscillator.frequency.setValueAtTime(220, this.audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(180, this.audioContext.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.15);
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + 0.15);
+                break;
+                
+            case 'cardSelect':
+                oscillator.frequency.setValueAtTime(440, this.audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.05, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.1);
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + 0.1);
+                break;
+                
+            case 'victory':
+                // Victory fanfare
+                this.playVictoryFanfare();
+                return;
+                
+            case 'defeat':
+                oscillator.frequency.setValueAtTime(150, this.audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(100, this.audioContext.currentTime + 0.5);
+                gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + 0.5);
+                break;
+                
+            case 'turnStart':
+                oscillator.frequency.setValueAtTime(330, this.audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(440, this.audioContext.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.08, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + 0.2);
+                break;
+                
+            case 'chat':
+                oscillator.frequency.setValueAtTime(660, this.audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.03, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.1);
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + 0.1);
+                break;
+        }
+    }
+
+    playVictoryFanfare() {
+        const notes = [262, 330, 392, 523]; // C, E, G, C (major chord)
+        notes.forEach((freq, index) => {
+            setTimeout(() => {
+                const oscillator = this.audioContext.createOscillator();
+                const gainNode = this.audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(this.audioContext.destination);
+                
+                oscillator.frequency.setValueAtTime(freq, this.audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.3);
+                
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + 0.3);
+            }, index * 100);
+        });
     }
 }
 

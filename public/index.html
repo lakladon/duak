@@ -17,6 +17,27 @@
                     <input type="text" id="playerName" placeholder="Введите ваше имя" maxlength="20">
                     <button id="joinGameBtn">Присоединиться к игре</button>
                 </div>
+                <div class="player-stats" id="playerStatsContainer" style="display: none;">
+                    <h3>Ваша статистика</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="gamesPlayed">0</div>
+                            <div class="stat-label">Игр сыграно</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="wins">0</div>
+                            <div class="stat-label">Побед</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="losses">0</div>
+                            <div class="stat-label">Поражений</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="winRate">0%</div>
+                            <div class="stat-label">Процент побед</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -80,6 +101,27 @@
                 <div id="gameStatusText">Ожидание начала игры...</div>
                 <div id="turnIndicator"></div>
             </div>
+
+            <!-- Chat System -->
+            <div class="chat-container">
+                <div class="chat-header">
+                    <span>Чат</span>
+                    <div class="chat-controls">
+                        <button id="toggleTheme" class="theme-toggle" title="Переключить тему">🌙</button>
+                        <button id="toggleSound" class="sound-toggle" title="Переключить звуки">🔊</button>
+                        <button id="toggleChat" class="chat-toggle">−</button>
+                    </div>
+                </div>
+                <div class="chat-content" id="chatContent">
+                    <div class="chat-messages" id="chatMessages">
+                        <!-- Chat messages will appear here -->
+                    </div>
+                    <div class="chat-input-container">
+                        <input type="text" id="chatInput" placeholder="Введите сообщение..." maxlength="100">
+                        <button id="sendChatBtn">Отправить</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Game Over Screen -->
@@ -87,6 +129,27 @@
             <div class="game-over-container">
                 <h2 id="gameResult">Игра окончена</h2>
                 <p id="gameResultText"></p>
+                <div class="game-over-stats" id="gameOverStats">
+                    <div class="stats-comparison">
+                        <div class="player-final-stats">
+                            <h4>Ваша статистика</h4>
+                            <div class="final-stats-grid">
+                                <div class="final-stat-item">
+                                    <span class="final-stat-value" id="finalGamesPlayed">0</span>
+                                    <span class="final-stat-label">игр</span>
+                                </div>
+                                <div class="final-stat-item">
+                                    <span class="final-stat-value" id="finalWins">0</span>
+                                    <span class="final-stat-label">побед</span>
+                                </div>
+                                <div class="final-stat-item">
+                                    <span class="final-stat-value" id="finalWinRate">0%</span>
+                                    <span class="final-stat-label">побед</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <button id="playAgainBtn">Играть снова</button>
             </div>
         </div>
