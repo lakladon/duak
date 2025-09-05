@@ -3,7 +3,6 @@ class DurakClient {
         this.socket = io();
         this.gameState = null;
         this.selectedCard = null;
-        this.selectedAttackIndex = null;
         this.playerName = '';
         
         this.initializeElements();
@@ -195,11 +194,8 @@ class DurakClient {
             defenseSlot.appendChild(defenseCard);
             defenseSlot.classList.add('has-card');
         } else {
-            // Allow defending if it's player's turn and they're the defender
-            if (this.canDefend() && this.selectedCard) {
-                defenseSlot.classList.add('can-defend');
-                defenseSlot.addEventListener('click', () => this.defendCard(index));
-            }
+            // Always add click listener for defense slots
+            defenseSlot.addEventListener('click', () => this.defendCard(index));
         }
 
         return pairElement;
@@ -215,9 +211,16 @@ class DurakClient {
             // Highlight cards that can be played
             if (this.canAttack() && this.canPlayCard(card)) {
                 cardElement.classList.add('can-attack');
-            } else if (this.canDefend() && this.selectedAttackIndex !== null) {
-                const attackCard = this.gameState.table[this.selectedAttackIndex]?.attack;
-                if (attackCard && this.canDefendWith(attackCard, card)) {
+            } else if (this.canDefend()) {
+                // Check if this card can defend against any undefended attack on the table
+                let canDefendAny = false;
+                for (let pair of this.gameState.table) {
+                    if (pair.attack && !pair.defense && this.canDefendWith(pair.attack, card)) {
+                        canDefendAny = true;
+                        break;
+                    }
+                }
+                if (canDefendAny) {
                     cardElement.classList.add('can-defend');
                 }
             }
@@ -259,9 +262,13 @@ class DurakClient {
         cardElement.classList.add('selected');
         this.selectedCard = cardData;
 
-        // If player can attack, try to attack
+        // If player can attack, try to attack immediately
         if (this.canAttack() && this.canPlayCard(cardData)) {
             this.attackWithCard(cardData);
+        } else if (this.canDefend()) {
+            // For defense, just select the card and wait for player to click on attack card
+            // The card will remain selected until used or another card is selected
+            this.updateDefenseSlots();
         }
     }
 
@@ -271,15 +278,36 @@ class DurakClient {
         document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
     }
 
+    updateDefenseSlots() {
+        // Remove previous defense slot highlights
+        document.querySelectorAll('.defense-card-slot.can-defend').forEach(slot => {
+            slot.classList.remove('can-defend');
+        });
+
+        // Highlight defense slots where selected card can be used
+        if (this.selectedCard && this.canDefend()) {
+            this.gameState.table.forEach((pair, index) => {
+                if (pair.attack && !pair.defense && this.canDefendWith(pair.attack, this.selectedCard)) {
+                    const defenseSlot = document.querySelector(`.card-pair:nth-child(${index + 1}) .defense-card-slot`);
+                    if (defenseSlot) {
+                        defenseSlot.classList.add('can-defend');
+                    }
+                }
+            });
+        }
+    }
+
     defendCard(attackIndex) {
         if (this.selectedCard && this.canDefend()) {
-            this.socket.emit('defend', { 
-                attackIndex: attackIndex, 
-                card: this.selectedCard 
-            });
-            this.selectedCard = null;
-            this.selectedAttackIndex = null;
-            document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
+            const attackCard = this.gameState.table[attackIndex]?.attack;
+            if (attackCard && this.canDefendWith(attackCard, this.selectedCard)) {
+                this.socket.emit('defend', { 
+                    attackIndex: attackIndex, 
+                    card: this.selectedCard 
+                });
+                this.selectedCard = null;
+                document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
+            }
         }
     }
 
@@ -405,7 +433,6 @@ class DurakClient {
         this.showScreen('loginScreen');
         this.gameState = null;
         this.selectedCard = null;
-        this.selectedAttackIndex = null;
     }
 
     getPlayerName(playerId) {
